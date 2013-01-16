@@ -30,20 +30,20 @@ while true do
 
     diff_hash.each do |df|
       puts "Detected change in #{df[0]}, refreshing"
-        %x{osascript<<ENDGAME
-          tell application "Google Chrome"
-            set windowList to every window
-            repeat with aWindow in windowList
-              set tabList to every tab of aWindow
-              repeat with atab in tabList
-                if (URL of atab contains "#{keyword}") then
-                  tell atab to reload
-                end if
-              end repeat
-            end repeat
-          end tell
-          ENDGAME
-        }
+%x{osascript<<ENDGAME
+tell application "Google Chrome"
+  set windowList to every window
+  repeat with aWindow in windowList
+    set tabList to every tab of aWindow
+    repeat with atab in tabList
+      if (URL of atab contains "#{keyword}") then
+        tell atab to reload
+      end if
+    end repeat
+  end repeat
+end tell
+ENDGAME
+}
     end
   end
 
