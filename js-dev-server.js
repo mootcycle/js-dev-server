@@ -1,30 +1,27 @@
-#!/usr/local/bin/node
+#!/usr/bin/env node
 
-var http = require("http"),
-    url = require("url"),
-    path = require("path"),
-    fs = require("fs"),
+var http = require('http'),
+    url = require('url'),
+    path = require('path'),
+    fs = require('fs'),
     cp = require('child_process'),
     program = require('commander');
 
 program
   .version('0.0.1')
   .option('-p, --port [port]', 'Specify a port number. (default: 8888)', 8888)
-  .option('-b, --browsers [browsers]', 'Specify which browsers to refresh; comma separated without spaces. (ex: chrome,safari)')
+  .option('-b, --browsers [browsers]', 'Specify which browsers to refresh; comma separated, no spaces. (ex: chrome,safari)')
   .option('-d, --delay [delay]', 'Specify the minimum number of seconds to throttle refresh commands. (default: 3)', 3)
-  .option('-s, --shadow [shadow]', 'Specify a web site to shadow these files over top of.')
+  .option('-x, --proxy [proxy]', 'Specify a web site to proxy. 404s will load from the proxied site.')
   .option('-o, --open [open]', 'Should the directory be opened in a browser window automatically. (default: true)', 'true')
+  .option('-e, --extensions [extensions]', 'Specify extensions to track for refreshes; comma separated, no spaces. (default: html,css,js)', 'html,css,js')
   .parse(process.argv);
 
 var port = parseInt(program.port, 10) || 8888,
     browsers = program.browsers ? program.browsers.split(',') : [],
-    shadowSite = program.shadow ? url.parse(program.shadow) : null,
+    proxySite = program.proxy ? url.parse(program.proxy) : null,
     open = program.open == 'true' ? true : false,
-    mime = {
-      "html": "text/html",
-      "css": "text/css",
-      "js": "application/javascript"
-    },
+    webFiles = {},
     throttleSeconds = parseInt(program.delay, 10) || 3,
     urlToMatchForRefresh = 'localhost:' + port;
     defaultBrowserCommand = 'defaults read com.apple.LaunchServices LSHandlers | grep -A 2 -B 2 "LSHandlerURLScheme = http;" | grep LSHandlerRoleAll',
@@ -66,10 +63,19 @@ end tell\n\
 ENDCOMMAND'
 };
 
+console.log(program.extensions.split(','));
+program.extensions.split(',').forEach(
+  function(ext) {
+    this[ext] = true
+  }.bind(webFiles)
+);
+console.log('watching: ' + JSON.stringify(webFiles));
+
+
 if (!browsers.length) {
   cp.exec(defaultBrowserCommand, function(error, stdout, stderr) {
     if (error) {
-      console.log('Error: ' + error);
+      console.log('Error executing default browser command: ' + error);
     } else {
       if (stdout.match('com.google.chrome')) {
         browsers.push('chrome');
@@ -78,7 +84,11 @@ if (!browsers.length) {
       } else if (stdout.match('com.apple.safari')) {
         browsers.push('safari');
       } else {
-        throw new Error('Unknown default browser!');
+        console.log('Unknown default browser!');
+      }
+
+      if (browsers.length && open) {
+        cp.exec('open http://localhost:' + port + '/');
       }
     }
   });
@@ -92,7 +102,7 @@ var throttledRefreshBrowser = (function(delay) {
   function refresh() {
     execTime = +new Date() + minimumRefresh;
     browsers.forEach(function(browser) {
-      console.log('Refreshing: ' + browser);
+      console.log('Sending refresh command to: ' + browser);
       cp.exec(refreshCommands[browser].replace('%site%', urlToMatchForRefresh));
     });
   }
@@ -119,10 +129,11 @@ function getExtension(file) {
 function fileChangeFactory(path) {
   return function(evt, filename) {
     if (evt == 'change') {
-      console.log('file change event: ' + path);
+      console.log('File change event: ' + path);
       throttledRefreshBrowser();
     } else {
-      console.log('file rename event: ' + path);
+      console.log('File rename event: ' + path);
+      // Not sure I actually need to rebuild the watchers here, but I will.
       rebuildWatchers();
     }
   }
@@ -130,7 +141,8 @@ function fileChangeFactory(path) {
 
 function directoryChangeFactory(path) {
   return function(evt, filename) {
-    console.log('directory changed: ' + path + ' event is ' + evt);
+    console.log('Directory change event at: ' + path);
+    // TODO: don't rescan the entire tree.
     rebuildWatchers();
   }
 }
@@ -146,7 +158,6 @@ function rebuildWatchers() {
 
 function scanDirectory(path) {
   watcherArray.push(fs.watch(path, {}, directoryChangeFactory(path)));
-  console.log('watching directory: ' + path);
 
   var list = fs.readdirSync(path);
   list.forEach(function(file) {
@@ -162,10 +173,9 @@ function scanDirectory(path) {
       if (stat.isDirectory()) {
         scanDirectory(fullPath);
       } else {
-        if (mime[getExtension(file)]) {
+        if (webFiles[getExtension(file)]) {
           // Add a watcher to all web text files.
           watcherArray.push(fs.watch(fullPath, {}, fileChangeFactory(fullPath)));
-          console.log('watching file: ' + fullPath);
         }
       }
     }
@@ -181,10 +191,10 @@ http.createServer(function(request, response) {
 
   fs.exists(filename, function(exists) {
     if (!exists) {
-      if (shadowSite) {
+      if (proxySite) {
         var options = {
-            host: shadowSite.hostname,
-            port: shadowSite.port || 80,
+            host: proxySite.hostname,
+            port: proxySite.port || 80,
             method: request.method,
             path: request.url,
             headers: request.headers,
@@ -207,8 +217,8 @@ http.createServer(function(request, response) {
 
           proxy_request.end();
       } else {
-        response.writeHead(404, {"Content-Type": "text/plain"});
-        response.write("404 Not Found:" + filename + "\n" + uri + "\n");
+        response.writeHead(404, {'Content-Type': 'text/plain'});
+        response.write('404 Not Found:' + filename + '\n' + uri + '\n');
         response.end();
         return;
       }
@@ -217,27 +227,27 @@ http.createServer(function(request, response) {
         filename += '/index.html';
       }
 
-      fs.readFile(filename, "binary", function(err, file) {
+      fs.readFile(filename, 'binary', function(err, file) {
         if(err) {        
-          response.writeHead(500, {"Content-Type": "text/plain"});
-          response.write(err + "\n");
+          response.writeHead(500, {'Content-Type': 'text/plain'});
+          response.write(err + '\n');
           response.end();
           return;
         }
 
         response.writeHead(200);
-        response.write(file, "binary");
+        response.write(file, 'binary');
         response.end();
       });
     }
   });
 }).listen(parseInt(port, 10));
 
-if (open) {
+if (browsers.length && open) {
   cp.exec('open http://localhost:' + port + '/');
 }
 
-console.log("Static file server running at\n  => http://localhost:" + port + "/\nCTRL + C to shutdown");
+console.log('Static file server running at\n  => http://localhost:' + port + '/\nCTRL + C to shutdown');
 
 
 
