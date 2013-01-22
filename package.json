@@ -1,16 +1,12 @@
 {
   "name": "js-dev-server",
-  "preferGlobal": "true",
   "version": "0.0.2",
   "author": "Dan Hummon",
   "description": "A simple javascript development server with some maybe nifty features.",
+  "main": "./js-dev-server",
   "bin": {
-    "js-dev-server": "./bin/js-dev-server"
+    "js-dev-server": "./js-dev-server.js"
   },
-  "scripts": {
-    "start": "node ./bin/js-dev-server"
-  },
-  "main": "./lib/js-dev-server",
   "repository": {
     "type": "git",
     "url": "https://github.com/mootcycle/js-dev-server.git"
