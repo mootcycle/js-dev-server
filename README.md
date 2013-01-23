@@ -43,5 +43,6 @@ A list of file extentions to point fs.FSWatcher instances at. You can specify mu
 
 ## Thanks:
  [Ryan Florence](https://github.com/rpflorence) for [static_server.js](https://gist.github.com/701407).
+ 
 [Brett Terpstra](https://github.com/ttscoff) for his [ruby watcher and AppleScript refresh scripts](http://brettterpstra.com/2011/03/07/watch-for-file-changes-and-refresh-your-browser-automatically/).
 
