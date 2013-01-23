@@ -8,7 +8,7 @@ var http = require('http'),
     program = require('commander');
 
 program
-  .version('0.0.1')
+  .version('0.0.3')
   .option('-p, --port [port]', 'Specify a port number. (default: 8888)', 8888)
   .option('-b, --browsers [browsers]', 'Specify which browsers to refresh; comma separated, no spaces. (ex: chrome,safari)')
   .option('-d, --delay [delay]', 'Specify the minimum number of seconds to throttle refresh commands. (default: 3)', 3)
@@ -63,13 +63,11 @@ end tell\n\
 ENDCOMMAND'
 };
 
-console.log(program.extensions.split(','));
 program.extensions.split(',').forEach(
   function(ext) {
     this[ext] = true
   }.bind(webFiles)
 );
-console.log('watching: ' + JSON.stringify(webFiles));
 
 
 if (!browsers.length) {
