@@ -17,32 +17,45 @@ Without arguments, this will start a server and open a tab in your default brows
 
 ## Arguments
 
+#### Port
+
     -p, --port
 
 Changes the port the dev server runs on. Defaults to 8888.
+
+#### Browsers
 
     -b, --browsers
 
 Allows you to specify which browser refresh scripts to run. By default, the script will attempt to use your default browser as specified in com.apple.LaunchServices. You can specify multiple browsers as a single comma separated string. (ex: `js-dev-server -b chrome,safari`)
 
+#### Delay
+
     -d, --delay
 
 Specifies the minimum amount of time to throttle the refresh calls from the dev server.
+
+#### Proxy
 
     -x, --proxy
 
 Allows you to proxy what would otherwise be 404 requests on your dev server to an external server. It's useful for overlaying your own file edits on top of an existing site.
 
+#### Open
+
     -o, --open
 
  Whether or not to open the url to the dev server in your default browser. Defaults to true.
+
+#### Extensions
 
     -e, --extensions
 
 A list of file extentions to point fs.FSWatcher instances at. You can specify multiple extensions as a single comma separated string. (ex: `js-dev-server -e html,css,js,jpg,png,txt`) Defaults to html,css,js.
 
 ## Thanks:
+[Paul Irish](https://twitter.com/paul_irish)
+
  [Ryan Florence](https://github.com/rpflorence) for [static_server.js](https://gist.github.com/701407).
 
 [Brett Terpstra](https://github.com/ttscoff) for his [ruby watcher and AppleScript refresh scripts](http://brettterpstra.com/2011/03/07/watch-for-file-changes-and-refresh-your-browser-automatically/).
-
