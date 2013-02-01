@@ -6,11 +6,13 @@ var http = require('http'),
     path = require('path'),
     fs = require('fs'),
     cp = require('child_process'),
-    program = require('commander');
+    program = require('commander'),
+    WebSocket = require('ws');
 
 program
   .version('0.0.4')
   .option('-p, --port [port]', 'Specify a port number. (default: 8888)', 8888)
+  .option('-wp, --webSocketPort [webSocketPort]', 'Specify a port number for the web socket server. (default: 8889)', 8889)
   .option('-w, --watchDepth [watchDepth]', 'Specify how many directory levels deep to add watchers. There is a limit to the number of watchers node will allow. (default: 3)', 3)
   .option('-s, --excludeStrings [excludeStrings]', 'Provide a comma separated list of strings used to exclude files/directories from being watched. (ex: node_modules,components')
   .option('-b, --browsers [browsers]', 'Specify which browsers to refresh; comma separated, no spaces. (ex: chrome,safari)')
@@ -22,6 +24,7 @@ program
   .parse(process.argv);
 
 var port = parseInt(program.port, 10) || 8888,
+    wsPort = parseInt(program.webSocketPort, 10) || 8888,
     watchDepth = parseInt(program.watchDepth, 10) || 3,
     browsers = program.browsers ? program.browsers.split(',') : [],
     excludeStrings = program.excludeStrings ? program.excludeStrings.split(',') : [],
@@ -33,6 +36,7 @@ var port = parseInt(program.port, 10) || 8888,
     urlToMatchForRefresh = 'localhost:' + port,
     defaultBrowserCommand = 'defaults read com.apple.LaunchServices LSHandlers | grep -A 2 -B 2 "LSHandlerURLScheme = http;" | grep LSHandlerRoleAll',
     watcherArray = [],
+    webSocketsArray = [],
     refreshCommands = {
     chrome: 'osascript <<ENDCOMMAND\n\
 tell application "Google Chrome"\n\
@@ -69,6 +73,19 @@ tell application "System Events"\n\
 end tell\n\
 ENDCOMMAND'
 };
+
+var injectedScript = '<script>\n\
+(function() {\n\
+  if (WebSocket) {\n\
+    var refreshSocket = new WebSocket("ws://" + window.location.hostname + ":' + wsPort + '/js-dev-server-refresh");\n\
+    refreshSocket.onmessage = function(event) {\n\
+      if (event.data == "reload") {\n\
+        window.location.reload();\n\
+      }\n\
+    };\n\
+  }\n\
+})();\n\
+</script>';
 
 program.extensions.split(',').forEach(
   function(ext) {
@@ -110,6 +127,18 @@ var throttledRefreshBrowser = (function(delay) {
       console.log('Sending refresh command to: ' + browser);
       cp.exec(refreshCommands[browser].replace('%site%', urlToMatchForRefresh));
     });
+
+    var openSockets = [];
+    webSocketsArray.forEach(function(ws) {
+      if (ws.readyState === WebSocket.OPEN) {
+        ws.send('reload');
+        openSockets.push(ws);
+      } else {
+        verboseLog('Found a dead websocket; removing it from the array. readyState: (' + ws.readyState + ')');
+      }
+    });
+
+    webSocketsArray = openSockets;
   }
 
   return function() {
@@ -156,6 +185,24 @@ function verboseLog(str) {
   if (verbose) {
     console.log(str);
   }
+}
+
+function dumpErrors(err, options) {
+  switch (err.code) {
+    case 'EMFILE':
+      console.log('js-dev-server tried to open too many files at a directory depth of ' + options.depth + '.\nTry restricting the watch depth to ' + (options.depth - 1) + ' with the -w option or limiting the matching files with the -s option.');
+      break;
+
+    case 'EADDRINUSE':
+      console.log('Port ' + options.port + ' is already in use. Try specifying another port using the -p argument.');
+      break;
+
+    default:
+      console.log('An unhandled error occurred: ' + err);
+      break;
+  }
+
+  process.exit();
 }
 
 function rebuildWatchers() {
@@ -214,27 +261,17 @@ function scanDirectory(path, depth) {
     }
 
     } catch(err) {
-      switch (err.code) {
-        case 'EMFILE':
-          console.log('js-dev-server tried to open too many files at a directory depth of ' + depth + '.\nTry restricting the watch depth to ' + (depth - 1) + ' with the -w option or limiting the matching files with the -s option.');
-          break;
-
-        default:
-          console.log('An unhandled error occurred: ' + err);
-          break;
-      }
-
-      process.exit();
+      dumpErrors(err, {fullPath:fullPath, depth: depth});
     }
   });
 }
 
 rebuildWatchers();
 
-http.createServer(function(request, response) {
-
+var localServer = http.createServer(function(request, response) {
   var uri = url.parse(request.url).pathname,
-      filename = path.join(process.cwd(), uri);
+      filename = path.join(process.cwd(), uri),
+      localBrower = request.connection.remoteAddress == '127.0.0.1' ? true : false;
 
   fs.exists(filename, function(exists) {
     if (!exists) {
@@ -282,13 +319,36 @@ http.createServer(function(request, response) {
           return;
         }
 
-        response.writeHead(200);
-        response.write(file, 'binary');
-        response.end();
+        if (localBrower || filename.split('.').reverse()[0] != 'html')  {
+          // If the client is a local client, just send the default file.
+          // Refreshes will be handled via AppleScript.
+
+          response.writeHead(200);
+          response.write(file, 'binary');
+          response.end();
+        } else {
+          response.writeHead(200);
+          var newFile = file.replace('</html>', injectedScript + '</html>');
+          response.write(newFile, 'binary');
+          response.end();
+        }
       });
     }
   });
-}).listen(parseInt(port, 10));
+});
+
+localServer.on('error', function(err) {
+  dumpErrors(err, {port: port});
+  this.close();
+});
+localServer.listen(parseInt(port, 10));
+
+var wss = new WebSocket.Server({port: wsPort});
+wss.on('connection', function(ws) {
+  verboseLog('Got a WebSocket connection.');
+  webSocketsArray.push(ws);
+});
+
 
 if (browsers.length && openBrowser) {
   cp.exec('open http://localhost:' + port + '/');

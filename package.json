@@ -17,7 +17,8 @@
     "server"
   ],
   "dependencies" : {
-    "commander":  "1.x"
+    "commander":  ">=1.x",
+    "ws":  ">=0.4.x"
   },  
   "license": "MIT",
   "engines": {

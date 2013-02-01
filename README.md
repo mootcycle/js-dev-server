@@ -1,7 +1,7 @@
 # js-dev-server
 
 This is a really simple Mac dev server I'm trying out based on inspiration from
-Paul Irish's "[Javascript Development Workflow of 2013](http://www.youtube.com/watch?v=f7AU2Ozu8eo)" talk. The idea is to give you a development http server with one package and minimal dependencies which will monitor files and trigger automatic refreshes for the relevant tabs in your browser.
+Paul Irish's "[Javascript Development Workflow of 2013](http://www.youtube.com/watch?v=f7AU2Ozu8eo)" talk. The idea is to give you a development http server with one package and minimal dependencies which will monitor files and trigger automatic refreshes for the relevant tabs in your browser. If you connect remote browsers with WebSocket support, they will also refresh when a file changes on the server.
 
 ## Installation
 
@@ -22,6 +22,12 @@ Without arguments, this will start a server and open a tab in your default brows
     -p, --port
 
 Changes the port the dev server runs on. Defaults to 8888.
+
+#### WebSocket Port
+
+    -wp, --webSocketPort
+
+Changes the port the WebSocket server runs on. (This is for refreshing remote clients.) Defaults to 8889.
 
 #### Watch Depth
 
