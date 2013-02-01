@@ -23,6 +23,18 @@ Without arguments, this will start a server and open a tab in your default brows
 
 Changes the port the dev server runs on. Defaults to 8888.
 
+#### Watch Depth
+
+    -w, --watchDepth
+
+The search depth for file watchers. All files will be served regardless of depth, but only files within the depth number will be watched for automatic refresh. This is necessary because of per-process limits on open files that are enforced by the operating system.
+
+#### Exclude Strings
+
+    -s, --excludeStrings
+
+A comma separated list of strings that will be matched against the full path of a file. If a match is found, that file will not have a watcher attached to it. This can be useful if you have a directory of components that you won't be modifying. Again, these files will still be served, just not watched for the browser refresh.
+
 #### Browsers
 
     -b, --browsers
@@ -41,17 +53,23 @@ Specifies the minimum amount of time to throttle the refresh calls from the dev 
 
 Allows you to proxy what would otherwise be 404 requests on your dev server to an external server. It's useful for overlaying your own file edits on top of an existing site.
 
-#### Open
+#### Skip Open
 
-    -o, --open
+    -o, --skipOpen
 
- Whether or not to open the url to the dev server in your default browser. Defaults to true.
+If set, the browser will not automatically open a new tab for this server.
 
 #### Extensions
 
     -e, --extensions
 
 A list of file extentions to point fs.FSWatcher instances at. You can specify multiple extensions as a single comma separated string. (ex: `js-dev-server -e html,css,js,jpg,png,txt`) Defaults to html,css,js.
+
+#### Verbose
+
+    -v, --verbose
+
+This prints out additional information about which files are and are not being watched.
 
 ## Thanks:
 [Paul Irish](https://twitter.com/paul_irish)

@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+/*jshint multistr:true, supernew: true*/
 
 var http = require('http'),
     url = require('url'),
@@ -8,22 +9,28 @@ var http = require('http'),
     program = require('commander');
 
 program
-  .version('0.0.3')
+  .version('0.0.4')
   .option('-p, --port [port]', 'Specify a port number. (default: 8888)', 8888)
+  .option('-w, --watchDepth [watchDepth]', 'Specify how many directory levels deep to add watchers. There is a limit to the number of watchers node will allow. (default: 3)', 3)
+  .option('-s, --excludeStrings [excludeStrings]', 'Provide a comma separated list of strings used to exclude files/directories from being watched. (ex: node_modules,components')
   .option('-b, --browsers [browsers]', 'Specify which browsers to refresh; comma separated, no spaces. (ex: chrome,safari)')
   .option('-d, --delay [delay]', 'Specify the minimum number of seconds to throttle refresh commands. (default: 3)', 3)
   .option('-x, --proxy [proxy]', 'Specify a web site to proxy. 404s will load from the proxied site.')
-  .option('-o, --open [open]', 'Should the directory be opened in a browser window automatically. (default: true)', 'true')
+  .option('-o, --skipOpen [skipOpen]', 'If set, the browser will not automatically open a new tab for this server.')
   .option('-e, --extensions [extensions]', 'Specify extensions to track for refreshes; comma separated, no spaces. (default: html,css,js)', 'html,css,js')
+  .option('-v, --verbose [verbose]', 'Print additional information about which files are watched/served.')
   .parse(process.argv);
 
 var port = parseInt(program.port, 10) || 8888,
+    watchDepth = parseInt(program.watchDepth, 10) || 3,
     browsers = program.browsers ? program.browsers.split(',') : [],
+    excludeStrings = program.excludeStrings ? program.excludeStrings.split(',') : [],
     proxySite = program.proxy ? url.parse(program.proxy) : null,
-    open = program.open == 'true' ? true : false,
+    openBrowser = !program.skipOpen,
+    verbose = !!program.verbose,
     webFiles = {},
     throttleSeconds = parseInt(program.delay, 10) || 3,
-    urlToMatchForRefresh = 'localhost:' + port;
+    urlToMatchForRefresh = 'localhost:' + port,
     defaultBrowserCommand = 'defaults read com.apple.LaunchServices LSHandlers | grep -A 2 -B 2 "LSHandlerURLScheme = http;" | grep LSHandlerRoleAll',
     watcherArray = [],
     refreshCommands = {
@@ -54,7 +61,7 @@ tell application "Safari"\n\
 end tell\n\
 ENDCOMMAND',
     // I can't find a better way to refresh tabs in firefox via command line
-    // or AppleScript. Patches welcome. :-/ 
+    // or AppleScript. Patches welcome. :-/
     firefox: 'osascript <<ENDCOMMAND\n\
 tell application "Firefox" to activate\n\
 tell application "System Events"\n\
@@ -65,13 +72,13 @@ ENDCOMMAND'
 
 program.extensions.split(',').forEach(
   function(ext) {
-    this[ext] = true
+    this[ext] = true;
   }.bind(webFiles)
 );
 
 
 if (!browsers.length) {
-  cp.exec(defaultBrowserCommand, function(error, stdout, stderr) {
+  cp.exec(defaultBrowserCommand, function(error, stdout) {
     if (error) {
       console.log('Error executing default browser command: ' + error);
     } else {
@@ -85,7 +92,7 @@ if (!browsers.length) {
         console.log('Unknown default browser!');
       }
 
-      if (browsers.length && open) {
+      if (browsers.length && openBrowser) {
         cp.exec('open http://localhost:' + port + '/');
       }
     }
@@ -98,7 +105,7 @@ var throttledRefreshBrowser = (function(delay) {
   var trailingCall;
 
   function refresh() {
-    execTime = +new Date() + minimumRefresh;
+    execTime = +new Date + minimumRefresh;
     browsers.forEach(function(browser) {
       console.log('Sending refresh command to: ' + browser);
       cp.exec(refreshCommands[browser].replace('%site%', urlToMatchForRefresh));
@@ -116,7 +123,7 @@ var throttledRefreshBrowser = (function(delay) {
       }
       trailingCall = setTimeout(refresh, execTime - now);
     }
-  }
+  };
 })(throttleSeconds);
 
 function getExtension(file) {
@@ -134,7 +141,7 @@ function fileChangeFactory(path) {
       // Not sure I actually need to rebuild the watchers here, but I will.
       rebuildWatchers();
     }
-  }
+  };
 }
 
 function directoryChangeFactory(path) {
@@ -142,6 +149,12 @@ function directoryChangeFactory(path) {
     console.log('Directory change event at: ' + path);
     // TODO: don't rescan the entire tree.
     rebuildWatchers();
+  };
+}
+
+function verboseLog(str) {
+  if (verbose) {
+    console.log(str);
   }
 }
 
@@ -154,14 +167,18 @@ function rebuildWatchers() {
   scanDirectory('.');
 }
 
-function scanDirectory(path) {
+function scanDirectory(path, depth) {
   watcherArray.push(fs.watch(path, {}, directoryChangeFactory(path)));
+  depth = depth || 0;
 
   var list = fs.readdirSync(path);
   list.forEach(function(file) {
     var fullPath = path + '/' + file;
 
-    var stat;
+    var stat, exclude;
+
+    try {
+
     try {
       stat = fs.statSync(fullPath);
     } catch (err) {
@@ -169,13 +186,45 @@ function scanDirectory(path) {
     }
     if (stat) {
       if (stat.isDirectory()) {
-        scanDirectory(fullPath);
+        if (watchDepth >= depth) {
+          verboseLog('At depth ' + depth + '; recursing into: ' + fullPath);
+
+          scanDirectory(fullPath, depth + 1);
+        } else {
+          verboseLog('Reached maximum depth at: ' + fullPath);
+        }
       } else {
         if (webFiles[getExtension(file)]) {
-          // Add a watcher to all web text files.
-          watcherArray.push(fs.watch(fullPath, {}, fileChangeFactory(fullPath)));
+          exclude = false;
+          excludeStrings.forEach(function(str) {
+            if (fullPath.match(str)) {
+              exclude = true;
+              verboseLog(fullPath + ' matched excludeString "' + str + '"; skipping.');
+            }
+          });
+
+          if (!exclude) {
+            verboseLog('watching: ' + fullPath);
+
+            // Add a watcher to all web text files.
+            watcherArray.push(fs.watch(fullPath, {}, fileChangeFactory(fullPath)));
+          }
         }
       }
+    }
+
+    } catch(err) {
+      switch (err.code) {
+        case 'EMFILE':
+          console.log('js-dev-server tried to open too many files at a directory depth of ' + depth + '.\nTry restricting the watch depth to ' + (depth - 1) + ' with the -w option or limiting the matching files with the -s option.');
+          break;
+
+        default:
+          console.log('An unhandled error occurred: ' + err);
+          break;
+      }
+
+      process.exit();
     }
   });
 }
@@ -198,7 +247,7 @@ http.createServer(function(request, response) {
             headers: request.headers,
             agent: request.agent
           };
-          options.headers.host = options.host + ':' + options.port
+          options.headers.host = options.host + ':' + options.port;
 
           var proxy_request = http.request(options, function(proxy_response) {
               proxy_response.on('data', function (chunk) {
@@ -226,7 +275,7 @@ http.createServer(function(request, response) {
       }
 
       fs.readFile(filename, 'binary', function(err, file) {
-        if(err) {        
+        if(err) {
           response.writeHead(500, {'Content-Type': 'text/plain'});
           response.write(err + '\n');
           response.end();
@@ -241,7 +290,7 @@ http.createServer(function(request, response) {
   });
 }).listen(parseInt(port, 10));
 
-if (browsers.length && open) {
+if (browsers.length && openBrowser) {
   cp.exec('open http://localhost:' + port + '/');
 }
 
