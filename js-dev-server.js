@@ -10,7 +10,7 @@ var http = require('http'),
     WebSocket = require('ws');
 
 program
-  .version('0.0.5')
+  .version('0.0.6')
   .option('-p, --port [port]', 'Specify a port number. (default: 8888)', 8888)
   .option('-wp, --webSocketPort [webSocketPort]', 'Specify a port number for the web socket server. (default: 8889)', 8889)
   .option('-w, --watchDepth [watchDepth]', 'Specify how many directory levels deep to add watchers. There is a limit to the number of watchers node will allow. (default: 3)', 3)

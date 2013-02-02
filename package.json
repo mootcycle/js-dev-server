@@ -1,6 +1,6 @@
 {
   "name": "js-dev-server",
-  "version": "0.0.5",
+  "version": "0.0.6",
   "author": "Dan Hummon",
   "description": "A simple javascript development server with some maybe nifty features.",
   "main": "./js-dev-server",
