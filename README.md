@@ -13,7 +13,7 @@ Just change to the your development directory and run:
 
     $ js-dev-server
 
-Without arguments, this will start a server and open a tab in your default browser pointed at that directory. Any time an html, css, or js file is modified (as watched by a [fs.FSWatcher](http://nodejs.org/docs/v0.8.6/api/all.html#all_class_fs_fswatcher)), the server will trigger a refresh in all browser tabs pointed at your development server. (Chrome and Safari work well at the moment. Firefox is a bit of a hack; I haven't found a good way to refresh specific tabs through AppleScript -- pull requests welcome. I'll have to look into Opera support soon.)
+Without arguments, this will start a server and open a tab in your default browser pointed at that directory. Any time an html, css, or js file is modified (as watched by a [fs.FSWatcher](http://nodejs.org/docs/v0.8.6/api/all.html#all_class_fs_fswatcher)), the server will trigger a refresh in all browser tabs pointed at your development server. If you point browsers on other machines on your local network at the dev server, they will also refresh and follow the navigation of your "boss" browser.
 
 ## Arguments
 
