@@ -15,7 +15,7 @@ program
   .option('-wp, --webSocketPort [webSocketPort]', 'Specify a port number for the web socket server. (default: 8889)', 8889)
   .option('-w, --watchDepth [watchDepth]', 'Specify how many directory levels deep to add watchers. There is a limit to the number of watchers node will allow. (default: 3)', 3)
   .option('-s, --excludeStrings [excludeStrings]', 'Provide a comma separated list of strings used to exclude files/directories from being watched. (ex: node_modules,components')
-  .option('-b, --browsers [browsers]', 'Specify which browsers to refresh; comma separated, no spaces. (ex: chrome,safari)')
+  .option('-b, --bossAddress [bossAddress]', 'Specify the IP address from which the main development browser will connect from. (default: 127.0.0.1)', '127.0.0.1')
   .option('-d, --delay [delay]', 'Specify the minimum number of seconds to throttle refresh commands. (default: 3)', 3)
   .option('-x, --proxy [proxy]', 'Specify a web site to proxy. 404s will load from the proxied site.')
   .option('-o, --skipOpen [skipOpen]', 'If set, the browser will not automatically open a new tab for this server.')
@@ -26,66 +26,46 @@ program
 var port = parseInt(program.port, 10) || 8888,
     wsPort = parseInt(program.webSocketPort, 10) || 8888,
     watchDepth = parseInt(program.watchDepth, 10) || 3,
-    browsers = program.browsers ? program.browsers.split(',') : [],
     excludeStrings = program.excludeStrings ? program.excludeStrings.split(',') : [],
+    bossAddress = program.bossAddress,
     proxySite = program.proxy ? url.parse(program.proxy) : null,
     openBrowser = !program.skipOpen,
     verbose = !!program.verbose,
     webFiles = {},
     throttleSeconds = parseInt(program.delay, 10) || 3,
-    urlToMatchForRefresh = 'localhost:' + port,
-    defaultBrowserCommand = 'defaults read com.apple.LaunchServices LSHandlers | grep -A 2 -B 2 "LSHandlerURLScheme = http;" | grep LSHandlerRoleAll',
     mostRecentlyVisited,
     watcherArray = [],
     webSocketsArray = [],
-    refreshCommands = {
-    chrome: 'osascript <<ENDCOMMAND\n\
-tell application "Google Chrome"\n\
-  set windowList to every window\n\
-  repeat with aWindow in windowList\n\
-    set tabList to every tab of aWindow\n\
-    repeat with atab in tabList\n\
-      if (URL of atab contains "%site%") then\n\
-        tell atab to reload\n\
-      end if\n\
-    end repeat\n\
-  end repeat\n\
-end tell\n\
-ENDCOMMAND',
-    safari: 'osascript <<ENDCOMMAND\n\
-tell application "Safari"\n\
-  set windowList to every window\n\
-  repeat with aWindow in windowList\n\
-    set tabList to every tab of aWindow\n\
-    repeat with atab in tabList\n\
-      if (URL of atab contains "%site%") then\n\
-        tell atab to do javascript "window.location.reload()"\n\
-      end if\n\
-    end repeat\n\
-  end repeat\n\
-end tell\n\
-ENDCOMMAND',
-    // I can't find a better way to refresh tabs in firefox via command line
-    // or AppleScript. Patches welcome. :-/
-    firefox: 'osascript <<ENDCOMMAND\n\
-tell application "Firefox" to activate\n\
-tell application "System Events"\n\
-  keystroke "r" using command down\n\
-end tell\n\
-ENDCOMMAND'
-    },
     injectedScript = '<script>\n\
 (function() {\n\
-  if (WebSocket) {\n\
-    var jsDevServerSocket = new WebSocket("ws://" + window.location.hostname + ":' + wsPort + '/js-dev-server-refresh");\n\
-    jsDevServerSocket.onmessage = function(event) {\n\
-      if (event.data == "reload") {\n\
-        window.location.reload();\n\
-      }\n\
-    };\n\
+  if (JSON && WebSocket) {\n\
+    var wsLocation = "ws://" + window.location.hostname + ":%WSPORT%/js-dev-server-refresh";\n\
+    function openConnection() {\n\
+      var jsDevServerSocket = new WebSocket(wsLocation);\n\
+      jsDevServerSocket.onmessage = function(event) {\n\
+        var cmd = JSON.parse(event.data);\n\
+        switch(cmd.action) {\n\
+          case "reload":\n\
+            window.location.reload();\n\
+            break;\n\
+          case "navigate":\n\
+            window.location = cmd.url;\n\
+            break;\n\
+          default:\n\
+            console.log("jsDevServerSocket unknown action: " + cmd.action);\n\
+            break;\n\
+        }\n\
+      };\n\
+\n\
+      jsDevServerSocket.onclose = function() {\n\
+          console.log("jsDevServerSocket connection lost -- will retry in 5 seconds.");\n\
+          setTimeout(function() { openConnection(); }, 5000);\n\
+      };\n\
+    }\n\
+    openConnection();\n\
   }\n\
 })();\n\
-</script>';
+</script>'.replace('%WSPORT%', wsPort);
 
 program.extensions.split(',').forEach(
   function(ext) {
@@ -94,66 +74,62 @@ program.extensions.split(',').forEach(
 );
 
 
-if (!browsers.length) {
-  cp.exec(defaultBrowserCommand, function(error, stdout) {
-    if (error) {
-      console.log('Error executing default browser command: ' + error);
-    } else {
-      if (stdout.match('com.google.chrome')) {
-        browsers.push('chrome');
-      } else if (stdout.match('org.mozilla.firefox')) {
-        browsers.push('firefox');
-      } else if (stdout.match('com.apple.safari')) {
-        browsers.push('safari');
-      } else {
-        console.log('Unknown default browser!');
-      }
-
-      if (browsers.length && openBrowser) {
-        cp.exec('open http://localhost:' + port + '/');
-      }
-    }
-  });
-}
-
-var throttledRefreshBrowser = (function(delay) {
+function throttleizer(delay, callback) {
   var minimumRefresh = delay * 1000;
   var execTime = 0;
   var trailingCall;
 
-  function refresh() {
+  function wrappedCallback() {
     execTime = +new Date + minimumRefresh;
-    browsers.forEach(function(browser) {
-      console.log('Sending refresh command to: ' + browser);
-      cp.exec(refreshCommands[browser].replace('%site%', urlToMatchForRefresh));
-    });
-
-    var openSockets = [];
-    webSocketsArray.forEach(function(ws) {
-      if (ws.readyState === WebSocket.OPEN) {
-        ws.send('reload');
-        openSockets.push(ws);
-      } else {
-        verboseLog('Found a dead websocket; removing it from the array. readyState: (' + ws.readyState + ')');
-      }
-    });
-
-    webSocketsArray = openSockets;
+    callback();
   }
 
   return function() {
     var now = +new Date;
 
     if (now > execTime) {
-      refresh();
+      wrappedCallback();
     } else {
       if (trailingCall) {
         clearTimeout(trailingCall);
       }
-      trailingCall = setTimeout(refresh, execTime - now);
+      trailingCall = setTimeout(wrappedCallback, execTime - now);
     }
   };
-})(throttleSeconds);
+}
+
+function refreshBrowsers() {
+  sendBrowserCommand({
+    action: 'reload'
+  }, true);
+}
+
+function navigateBrowsers() {
+  sendBrowserCommand({
+    action: 'navigate',
+    url: mostRecentlyVisited
+  });
+}
+
+function sendBrowserCommand(cmd, includeBoss) {
+  verboseLog('Sending browser command: ' + JSON.stringify(cmd));
+  var openSockets = [];
+  webSocketsArray.forEach(function(ws) {
+    if (ws.readyState === WebSocket.OPEN) {
+      if (includeBoss || !ws._socket.remoteAddress.match(bossAddress)) {
+        ws.send(JSON.stringify(cmd));
+      }
+      openSockets.push(ws);
+    } else {
+      verboseLog('Found a dead websocket; removing it from the array. readyState: (' + ws.readyState + ')');
+    }
+  });
+
+  webSocketsArray = openSockets;
+}
+
+var throttledRefreshBrowser = throttleizer(throttleSeconds, refreshBrowsers),
+    throttledNavigateBrowser = throttleizer(throttleSeconds, navigateBrowsers);
 
 function getExtension(file) {
   var arr = file.split('.');
@@ -271,8 +247,8 @@ rebuildWatchers();
 var localServer = http.createServer(function(request, response) {
   var uri = url.parse(request.url).pathname,
       filename = path.join(process.cwd(), uri),
-      localBrower = request.connection.remoteAddress == '127.0.0.1' ? true : false,
-      extension = filename.split('.').reverse()[0];
+      bossBrowser = request.socket.remoteAddress.match(bossAddress) ? true : false,
+      extension;
 
   fs.exists(filename, function(exists) {
     if (!exists) {
@@ -313,31 +289,25 @@ var localServer = http.createServer(function(request, response) {
       }
 
       fs.readFile(filename, 'binary', function(err, file) {
-        if(err) {
+        if (err) {
           response.writeHead(500, {'Content-Type': 'text/plain'});
           response.write(err + '\n');
           response.end();
           return;
         }
 
-        if (localBrower || extension != 'html')  {
-          // If the client is a local client, just send the default file.
-          // Refreshes will be handled via AppleScript.
-
-          if (extension == 'html') {
-            // ASDASD
-            mostRecentlyVisited = 'http://localhost:' + port + '/';
-          }
-
-          response.writeHead(200);
-          response.write(file, 'binary');
-          response.end();
-        } else {
-          response.writeHead(200);
-          var newFile = file.replace('</html>', injectedScript + '</html>');
-          response.write(newFile, 'binary');
-          response.end();
+        extension = filename.split('.').reverse()[0];
+        if (bossBrowser && extension == 'html') {
+          // Direct remote browsers to the new page.
+          mostRecentlyVisited = request.url;
+          verboseLog('Most recently visited page: ' + mostRecentlyVisited);
+          throttledNavigateBrowser();
         }
+
+        response.writeHead(200);
+        var newFile = file.replace('</body>', '\n' + injectedScript + '\n</body>');
+        response.write(newFile, 'binary');
+        response.end();
       });
     }
   });
@@ -356,7 +326,7 @@ wss.on('connection', function(ws) {
 });
 
 
-if (browsers.length && openBrowser) {
+if (openBrowser) {
   cp.exec('open http://localhost:' + port + '/');
   mostRecentlyVisited = 'http://localhost:' + port + '/';
 }

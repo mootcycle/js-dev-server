@@ -41,11 +41,11 @@ The search depth for file watchers. All files will be served regardless of depth
 
 A comma separated list of strings that will be matched against the full path of a file. If a match is found, that file will not have a watcher attached to it. This can be useful if you have a directory of components that you won't be modifying. Again, these files will still be served, just not watched for the browser refresh.
 
-#### Browsers
+#### Boss Address
 
-    -b, --browsers
+    -b, --bossAddress
 
-Allows you to specify which browser refresh scripts to run. By default, the script will attempt to use your default browser as specified in com.apple.LaunchServices. You can specify multiple browsers as a single comma separated string. (ex: `js-dev-server -b chrome,safari`)
+Clients connecting from this address will trigger nagivation change events in all other clients.
 
 #### Delay
 
@@ -82,4 +82,4 @@ This prints out additional information about which files are and are not being w
 
  [Ryan Florence](https://github.com/rpflorence) for [static_server.js](https://gist.github.com/701407).
 
-[Brett Terpstra](https://github.com/ttscoff) for his [ruby watcher and AppleScript refresh scripts](http://brettterpstra.com/2011/03/07/watch-for-file-changes-and-refresh-your-browser-automatically/).
+[Brett Terpstra](https://github.com/ttscoff) for his [ruby watcher and AppleScript refresh scripts](http://brettterpstra.com/2011/03/07/watch-for-file-changes-and-refresh-your-browser-automatically/). These scripts gave me the initial version of js-dev-server, but now I've removed all AppleScript from the code.
