@@ -35,6 +35,7 @@ var port = parseInt(program.port, 10) || 8888,
     throttleSeconds = parseInt(program.delay, 10) || 3,
     urlToMatchForRefresh = 'localhost:' + port,
     defaultBrowserCommand = 'defaults read com.apple.LaunchServices LSHandlers | grep -A 2 -B 2 "LSHandlerURLScheme = http;" | grep LSHandlerRoleAll',
+    mostRecentlyVisited,
     watcherArray = [],
     webSocketsArray = [],
     refreshCommands = {
@@ -72,13 +73,12 @@ tell application "System Events"\n\
   keystroke "r" using command down\n\
 end tell\n\
 ENDCOMMAND'
-};
-
-var injectedScript = '<script>\n\
+    },
+    injectedScript = '<script>\n\
 (function() {\n\
   if (WebSocket) {\n\
-    var refreshSocket = new WebSocket("ws://" + window.location.hostname + ":' + wsPort + '/js-dev-server-refresh");\n\
-    refreshSocket.onmessage = function(event) {\n\
+    var jsDevServerSocket = new WebSocket("ws://" + window.location.hostname + ":' + wsPort + '/js-dev-server-refresh");\n\
+    jsDevServerSocket.onmessage = function(event) {\n\
       if (event.data == "reload") {\n\
         window.location.reload();\n\
       }\n\
@@ -271,7 +271,8 @@ rebuildWatchers();
 var localServer = http.createServer(function(request, response) {
   var uri = url.parse(request.url).pathname,
       filename = path.join(process.cwd(), uri),
-      localBrower = request.connection.remoteAddress == '127.0.0.1' ? true : false;
+      localBrower = request.connection.remoteAddress == '127.0.0.1' ? true : false,
+      extension = filename.split('.').reverse()[0];
 
   fs.exists(filename, function(exists) {
     if (!exists) {
@@ -319,9 +320,14 @@ var localServer = http.createServer(function(request, response) {
           return;
         }
 
-        if (localBrower || filename.split('.').reverse()[0] != 'html')  {
+        if (localBrower || extension != 'html')  {
           // If the client is a local client, just send the default file.
           // Refreshes will be handled via AppleScript.
+
+          if (extension == 'html') {
+            // ASDASD
+            mostRecentlyVisited = 'http://localhost:' + port + '/';
+          }
 
           response.writeHead(200);
           response.write(file, 'binary');
@@ -352,6 +358,7 @@ wss.on('connection', function(ws) {
 
 if (browsers.length && openBrowser) {
   cp.exec('open http://localhost:' + port + '/');
+  mostRecentlyVisited = 'http://localhost:' + port + '/';
 }
 
 console.log('Static file server running at\n  => http://localhost:' + port + '/\nCTRL + C to shutdown');
