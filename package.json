@@ -1,6 +1,6 @@
 {
   "name": "js-dev-server",
-  "version": "0.0.6",
+  "version": "0.0.7",
   "author": "Dan Hummon",
   "description": "A simple javascript development server with some maybe nifty features.",
   "main": "./js-dev-server",
@@ -17,8 +17,9 @@
     "server"
   ],
   "dependencies" : {
-    "commander":  ">=1.x",
-    "ws":  ">=0.4.x"
+    "commander": ">=1.x",
+    "ws": ">=0.4.x",
+    "cheerio": ">=0.10.x"
   },  
   "license": "MIT",
   "engines": {

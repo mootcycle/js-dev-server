@@ -1,0 +1,36 @@
+<style>
+#js-dev-server-outer {
+  position: absolute;
+  top: 20px;
+  right: 50px;
+  z-index: 9999;
+  border: 2px solid brown;
+  border-radius: 1em;
+  background: red;
+  min-width: 300px;
+  text-align: left;
+  font-family: sans-serif;
+  padding-bottom: 15px;
+  display: none;
+}
+#js-dev-server-title {
+  color: white;
+  font-size: 14pt;
+  padding: 0.5em;
+}
+#js-dev-server-browser-container {
+  color: black;
+  background: white;
+  padding-top: 0.1em;
+  padding-bottom: 0.1em;
+  font-size: 12pt;
+}
+</style>
+<div id="js-dev-server-outer">
+  <div id="js-dev-server-title">
+    Remote browsers:
+  </div>
+  <div id="js-dev-server-browser-container">
+    <ul id="js-dev-server-browser-list"></ul>
+  </div>
+</div>

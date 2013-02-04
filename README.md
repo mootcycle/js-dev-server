@@ -1,7 +1,7 @@
 # js-dev-server
 
 This is a really simple Mac dev server I'm trying out based on inspiration from
-Paul Irish's "[Javascript Development Workflow of 2013](http://www.youtube.com/watch?v=f7AU2Ozu8eo)" talk. The idea is to give you a development http server with one package and minimal dependencies which will monitor files and trigger automatic refreshes for the relevant tabs in your browser. If you connect remote browsers with WebSocket support, they will also refresh when a file changes on the server.
+Paul Irish's "[Javascript Development Workflow of 2013](http://www.youtube.com/watch?v=f7AU2Ozu8eo)" talk. The idea is to give you a development http server with one package and minimal dependencies which will monitor files and trigger automatic refreshes for the relevant tabs in your browser. If you connect remote browsers with WebSocket support, they will also refresh when a file changes on the server. Now with [jsConsole](http://jsconsole.com/) support for all your remote browsers.
 
 ## Installation
 
@@ -13,7 +13,7 @@ Just change to the your development directory and run:
 
     $ js-dev-server
 
-Without arguments, this will start a server and open a tab in your default browser pointed at that directory. Any time an html, css, or js file is modified (as watched by a [fs.FSWatcher](http://nodejs.org/docs/v0.8.6/api/all.html#all_class_fs_fswatcher)), the server will trigger a refresh in all browser tabs pointed at your development server. If you point browsers on other machines on your local network at the dev server, they will also refresh and follow the navigation of your "boss" browser.
+Without arguments, this will start a server and open a tab in your default browser pointed at that directory. Any time an html, css, or js file is modified (as watched by a [fs.FSWatcher](http://nodejs.org/docs/v0.8.6/api/all.html#all_class_fs_fswatcher)), the server will trigger a refresh in all browser tabs pointed at your development server. If you point browsers on other machines on your local network at the dev server, they will also refresh and follow the navigation of your "boss" browser. Show and hide the remote browsers pane on the "boss" browser with control-6; click on an IP to open a remote console to that browser.
 
 ## Arguments
 
@@ -79,6 +79,8 @@ This prints out additional information about which files are and are not being w
 
 ## Thanks:
 [Paul Irish](https://twitter.com/paul_irish)
+
+[Remy Sharp](https://twitter.com/rem) for [jsconsole](http://jsconsole.com).
 
  [Ryan Florence](https://github.com/rpflorence) for [static_server.js](https://gist.github.com/701407).
 

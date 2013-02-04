@@ -7,10 +7,11 @@ var http = require('http'),
     fs = require('fs'),
     cp = require('child_process'),
     program = require('commander'),
-    WebSocket = require('ws');
+    WebSocket = require('ws'),
+    cheerio = require('cheerio');
 
 program
-  .version('0.0.6')
+  .version('0.0.7')
   .option('-p, --port [port]', 'Specify a port number. (default: 8888)', 8888)
   .option('-wp, --webSocketPort [webSocketPort]', 'Specify a port number for the web socket server. (default: 8889)', 8889)
   .option('-w, --watchDepth [watchDepth]', 'Specify how many directory levels deep to add watchers. There is a limit to the number of watchers node will allow. (default: 3)', 3)
@@ -32,40 +33,13 @@ var port = parseInt(program.port, 10) || 8888,
     openBrowser = !program.skipOpen,
     verbose = !!program.verbose,
     webFiles = {},
+    webClients = {},
     throttleSeconds = parseInt(program.delay, 10) || 3,
     mostRecentlyVisited,
     watcherArray = [],
     webSocketsArray = [],
-    injectedScript = '<script>\n\
-(function() {\n\
-  if (JSON && WebSocket) {\n\
-    var wsLocation = "ws://" + window.location.hostname + ":%WSPORT%/js-dev-server-refresh";\n\
-    function openConnection() {\n\
-      var jsDevServerSocket = new WebSocket(wsLocation);\n\
-      jsDevServerSocket.onmessage = function(event) {\n\
-        var cmd = JSON.parse(event.data);\n\
-        switch(cmd.action) {\n\
-          case "reload":\n\
-            window.location.reload();\n\
-            break;\n\
-          case "navigate":\n\
-            window.location = cmd.url;\n\
-            break;\n\
-          default:\n\
-            console.log("jsDevServerSocket unknown action: " + cmd.action);\n\
-            break;\n\
-        }\n\
-      };\n\
-\n\
-      jsDevServerSocket.onclose = function() {\n\
-          console.log("jsDevServerSocket connection lost -- will retry in 5 seconds.");\n\
-          setTimeout(function() { openConnection(); }, 5000);\n\
-      };\n\
-    }\n\
-    openConnection();\n\
-  }\n\
-})();\n\
-</script>'.replace('%WSPORT%', wsPort);
+    injectionScript = '<script>' + fs.readFileSync(__dirname + '/injection-script.js').toString().replace('%WSPORT%', wsPort) + '</script>',
+    controlDiv = fs.readFileSync(__dirname + '/control-div.html').toString();
 
 program.extensions.split(',').forEach(
   function(ext) {
@@ -101,24 +75,54 @@ function throttleizer(delay, callback) {
 function refreshBrowsers() {
   sendBrowserCommand({
     action: 'reload'
-  }, true);
+  }, {boss: true, remoteBrowsers: true});
 }
 
 function navigateBrowsers() {
   sendBrowserCommand({
     action: 'navigate',
     url: mostRecentlyVisited
-  });
+  }, {remoteBrowsers: true});
 }
 
-function sendBrowserCommand(cmd, includeBoss) {
+function updateRemoteBrowsers() {
+  var list = [];
+  for (var wc in webClients) {
+    if (webClients[wc].readyState === WebSocket.OPEN && !webClients[wc]._socket.remoteAddress.match(bossAddress)) {
+      list.push({
+        name: webClients[wc]._socket.remoteAddress.toString(),
+        jsid: wc
+      });
+    }
+  }
+
+  if (!list.length) {
+    list.push({name: 'No remote connections.'});
+  }
+
+  sendBrowserCommand({
+    action: 'browsers',
+    browserList: list
+  }, {boss: true});
+}
+
+function sendBrowserCommand(cmd, targets) {
   verboseLog('Sending browser command: ' + JSON.stringify(cmd));
   var openSockets = [];
   webSocketsArray.forEach(function(ws) {
     if (ws.readyState === WebSocket.OPEN) {
-      if (includeBoss || !ws._socket.remoteAddress.match(bossAddress)) {
+      if (targets.boss && ws._socket.remoteAddress.match(bossAddress)) {
         ws.send(JSON.stringify(cmd));
       }
+
+      if (targets.remoteBrowsers && !ws._socket.remoteAddress.match(bossAddress)) {
+        ws.send(JSON.stringify(cmd));
+      }
+
+      if (targets.specificBrowser && ws === webClients[targets.specificBrowser]) {
+        ws.send(JSON.stringify(cmd));
+      }
+
       openSockets.push(ws);
     } else {
       verboseLog('Found a dead websocket; removing it from the array. readyState: (' + ws.readyState + ')');
@@ -242,13 +246,38 @@ function scanDirectory(path, depth) {
   });
 }
 
+function receiveClientCommands(ws, cmd) {
+  switch(cmd.action) {
+    case 'register':
+      verboseLog('Registering client: ' + cmd.jsid);
+      webClients[cmd.jsid] = ws;
+      updateRemoteBrowsers();
+      break;
+
+    case 'jsConsole':
+      verboseLog('got a jsConsole command');
+      verboseLog(JSON.stringify(cmd));
+
+      sendBrowserCommand({
+        action: 'jsConsole',
+        jsid: cmd.jsid
+      }, {specificBrowser: cmd.jsid});
+      break;
+
+    default:
+      verboseLog('Unknown client command: ' + cmd.action);
+      break;
+  }
+}
+
 rebuildWatchers();
 
 var localServer = http.createServer(function(request, response) {
   var uri = url.parse(request.url).pathname,
       filename = path.join(process.cwd(), uri),
       bossBrowser = request.socket.remoteAddress.match(bossAddress) ? true : false,
-      extension;
+      extension,
+      $;
 
   fs.exists(filename, function(exists) {
     if (!exists) {
@@ -297,6 +326,7 @@ var localServer = http.createServer(function(request, response) {
         }
 
         extension = filename.split('.').reverse()[0];
+
         if (bossBrowser && extension == 'html') {
           // Direct remote browsers to the new page.
           mostRecentlyVisited = request.url;
@@ -304,9 +334,17 @@ var localServer = http.createServer(function(request, response) {
           throttledNavigateBrowser();
         }
 
+        if (extension == 'html') {
+          $ = cheerio.load(file);
+          $('body').append($(injectionScript));
+          if (bossBrowser) {
+            $('body').append($(controlDiv));
+          }
+          file = $.html();
+        }
+
         response.writeHead(200);
-        var newFile = file.replace('</body>', '\n' + injectedScript + '\n</body>');
-        response.write(newFile, 'binary');
+        response.write(file, 'binary');
         response.end();
       });
     }
@@ -323,6 +361,14 @@ var wss = new WebSocket.Server({port: wsPort});
 wss.on('connection', function(ws) {
   verboseLog('Got a WebSocket connection.');
   webSocketsArray.push(ws);
+
+  ws.on('message', function(message) {
+    receiveClientCommands(this, JSON.parse(message));
+  });
+
+  ws.on('close', function() {
+    updateRemoteBrowsers();
+  });
 });
 
 
@@ -332,7 +378,3 @@ if (openBrowser) {
 }
 
 console.log('Static file server running at\n  => http://localhost:' + port + '/\nCTRL + C to shutdown');
-
-
-
-
