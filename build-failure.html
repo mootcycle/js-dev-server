@@ -1,0 +1,52 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Oops. It's broken.</title>
+
+  <style>
+    body {
+      background-color: #112;
+    }
+
+    .error-div {
+      background-color: #333;
+      border-radius: 1em;
+      border: 2px solid #222;
+      box-shadow: 10px 10px 5px #111;
+      color: #fff;
+      display: block;
+      font-family: Consolas, "Liberation Mono", Courier, monospace;
+      margin-left: auto;
+      margin-right: auto;
+      max-width: 1000px;
+      min-width: 400px;
+      padding: 1em 1em 1em 1em;
+      text-align: center;
+      text-shadow: 2px 2px #000;
+    }
+
+    .error-message {
+      background: black;
+      border-radius: 1em;
+      border: 2px solid #888;
+      color: #3cfb31;
+      padding: 1em 1em 1em 1em;
+      text-align: left;
+      text-shadow: none;
+    }
+    </style>
+</head>
+<body>
+  <div>
+    <div class="error-div">
+      <h1>Oops. It's broken.</h1>
+      Looks like something broke with the build process.<br/>
+      I'm not really sure what, but this might give you a clue:
+      <p class="error-message">
+        %error%
+      </p>
+    </div>
+  </div>
+</body>
+</html>

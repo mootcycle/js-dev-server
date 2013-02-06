@@ -55,21 +55,23 @@
             break;
           case "browsers":
             var a, li, list = document.getElementById('js-dev-server-browser-list');
-            while(list.children.length > 0) {
-              list.removeChild(list.children[0]);
-            }
-
-            for (var i=0;i<cmd.browserList.length;i++) {
-              li = document.createElement('li');
-              a = document.createElement('a');
-              if (cmd.browserList[i].jsid) {
-                a.href = '#' + cmd.browserList[i].jsid;
-                a.onclick = generateClicker(cmd.browserList[i].jsid);
+            if (list) {
+              while(list.children.length > 0) {
+                list.removeChild(list.children[0]);
               }
-              a.innerHTML = cmd.browserList[i].name;
 
-              li.appendChild(a);
-              list.appendChild(li);
+              for (var i=0;i<cmd.browserList.length;i++) {
+                li = document.createElement('li');
+                a = document.createElement('a');
+                if (cmd.browserList[i].jsid) {
+                  a.href = '#' + cmd.browserList[i].jsid;
+                  a.onclick = generateClicker(cmd.browserList[i].jsid);
+                }
+                a.innerHTML = cmd.browserList[i].name;
+
+                li.appendChild(a);
+                list.appendChild(li);
+              }
             }
             break;
           case "jsConsole":

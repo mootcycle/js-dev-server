@@ -1,7 +1,7 @@
 # js-dev-server
 
-This is a really simple javascript development server I'm trying out based on inspiration from
-Paul Irish's "[Javascript Development Workflow of 2013](http://www.youtube.com/watch?v=f7AU2Ozu8eo)" talk. The idea is to give you a development http server with one package and minimal dependencies which will monitor files and trigger automatic refreshes for the relevant tabs in your browser. If you connect remote browsers with WebSocket support, they will also refresh when a file changes on the server. Now with [jsConsole](http://jsconsole.com/) support for all your remote browsers.
+This is a simple javascript development server I'm trying out based on inspiration from
+Paul Irish's "[Javascript Development Workflow of 2013](http://www.youtube.com/watch?v=f7AU2Ozu8eo)" talk. The idea is to give you a development http server which will monitor files and trigger automatic refreshes for the relevant tabs in your browser. Browsers must have WebSocket support for the automatic refresh and remote browser navigation to function properly. Now with [jsConsole](http://jsconsole.com/) support for all your remote browsers.
 
 ## Installation
 
@@ -17,6 +17,12 @@ Without arguments, this will start a server and open a tab in your default brows
 
 ## Arguments
 
+#### Config File
+
+    -c, --configFile
+
+Allows you to specify a JSON config file for the js-dev-server. By default, js-dev-server will look for files named `.js-dev-server` in the working directory and then in the current user's home directory. When configuration settings conflict, the command line arguments take top priority, followed by the current working directory and then the home directory config file.
+
 #### Port
 
     -p, --port
@@ -25,7 +31,7 @@ Changes the port the dev server runs on. Defaults to 8888.
 
 #### WebSocket Port
 
-    -wp, --webSocketPort
+    -k, --webSocketPort
 
 Changes the port the WebSocket server runs on. (This is for refreshing remote clients.) Defaults to 8889.
 
@@ -76,6 +82,12 @@ A list of file extentions to point fs.FSWatcher instances at. You can specify mu
     -v, --verbose
 
 This prints out additional information about which files are and are not being watched.
+
+#### Build Command
+
+    -u, --buildCommand
+
+If you have a build script for your project, you can specify a command to start the build. All file watching is disabled while the build is running, but will be rescanned afterwards. If your build script exits with a value other than 0, js-dev-server will notify you with an error page containing the output of the failed build.
 
 ## Thanks:
 [Paul Irish](https://twitter.com/paul_irish)
