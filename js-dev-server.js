@@ -27,7 +27,7 @@ var http = require('http'),
     };
 
 program
-  .version('0.0.8')
+  .version('0.0.9')
   .option('-c, --configFile [configFile]', 'Load options from a config file.')
   .option('-p, --port [port]', 'Specify a port number. (default: 8888)')
   .option('-k, --webSocketPort [webSocketPort]', 'Specify a port number for the web socket server. (default: 8889)')
@@ -246,7 +246,10 @@ function dumpErrors(err, options) {
       break;
 
     default:
-      if (options.loadConfig) {
+      if (options.fullPath) {
+        console.error('Fullpath error occurred: (' + err.code + '): ' + err);
+        console.error(JSON.stringify(options, null, 2));
+      } else if (options.loadConfig) {
         console.error('Syntax error loading config file: ' + options.loadConfig);
         console.error('Is it valid JSON?');
       } else {
@@ -283,43 +286,48 @@ function scanDirectory(scanPath, depth) {
     var stat, exclude;
 
     try {
+      try {
+        stat = fs.statSync(fullPath);
+      } catch (err) {
+        stat = null;
+      }
+      if (stat) {
+        if (stat.isDirectory()) {
+          if (config.watchDepth >= depth) {
+            verboseLog('At depth ' + depth + '; recursing into: ' + fullPath);
 
-    try {
-      stat = fs.statSync(fullPath);
-    } catch (err) {
-      stat = null;
-    }
-    if (stat) {
-      if (stat.isDirectory()) {
-        if (config.watchDepth >= depth) {
-          verboseLog('At depth ' + depth + '; recursing into: ' + fullPath);
-
-          scanDirectory(fullPath, depth + 1);
+            scanDirectory(fullPath, depth + 1);
+          } else {
+            verboseLog('Reached maximum depth at: ' + fullPath);
+          }
         } else {
-          verboseLog('Reached maximum depth at: ' + fullPath);
-        }
-      } else {
-        if (watchedExtensions[path.extname(file)]) {
-          exclude = false;
-          config.excludeStrings.forEach(function(str) {
-            if (fullPath.match(str)) {
-              exclude = true;
-              verboseLog(fullPath + ' matched excludeString "' + str + '"; skipping.');
+          if (watchedExtensions[path.extname(file)]) {
+            exclude = false;
+            config.excludeStrings.forEach(function(str) {
+              if (fullPath.match(str)) {
+                exclude = true;
+                verboseLog(fullPath + ' matched excludeString "' + str + '"; skipping.');
+              }
+            });
+
+            if (!exclude) {
+              verboseLog('watching: ' + fullPath);
+
+              // Add a watcher to all web text files.
+              watcherArray.push(fs.watch(fullPath, {}, fileChangeFactory(fullPath)));
             }
-          });
-
-          if (!exclude) {
-            verboseLog('watching: ' + fullPath);
-
-            // Add a watcher to all web text files.
-            watcherArray.push(fs.watch(fullPath, {}, fileChangeFactory(fullPath)));
           }
         }
       }
-    }
-
     } catch(err) {
-      dumpErrors(err, {fullPath:fullPath, depth: depth});
+      if (err.code == "ENOENT") {
+        verboseLog('File not found error during refresh; delaying 1 second and rescanning.');
+        setTimeout(function() {
+          scanDirectory('.');
+        }, 1000);
+      } else {
+        dumpErrors(err, {fullPath:fullPath, depth: depth});
+      }
     }
   });
 }
