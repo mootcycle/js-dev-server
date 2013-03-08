@@ -89,10 +89,16 @@ This prints out additional information about which files are and are not being w
 
 If you have a build script for your project, you can specify a command to start the build. All file watching is disabled while the build is running, but will be rescanned afterwards. If your build script exits with a value other than 0, js-dev-server will notify you with an error page containing the output of the failed build.
 
+#### Jitter
+
+    -j, --jitter
+
+If your text editor is like mine, it might touch a couple of files when you invoke a save command. If this is the case, you'll want js-dev-server to wait until all that activity is finished before it rescans and refreshes your pages. The jitter option allows you to specify how long to wait before a rescan/refresh will start. The default wait time is 300ms.
+
 ## Thanks:
 [Paul Irish](https://twitter.com/paul_irish)
 
-[Remy Sharp](https://twitter.com/rem) for [jsconsole](http://jsconsole.com).
+[Remy Sharp](https://twitter.com/rem) for [jsconsole](http://jsconsole.com) and [nodemon](https://github.com/remy/nodemon).
 
  [Ryan Florence](https://github.com/rpflorence) for [static_server.js](https://gist.github.com/701407).
 

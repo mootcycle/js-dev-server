@@ -23,11 +23,12 @@ var http = require('http'),
       skipOpen: false,
       extensions: 'html,css,js',
       verbose: false,
-      buildCommand: ''
+      buildCommand: '',
+      jitter: 300
     };
 
 program
-  .version('0.0.9')
+  .version('0.1.0')
   .option('-c, --configFile [configFile]', 'Load options from a config file.')
   .option('-p, --port [port]', 'Specify a port number. (default: 8888)')
   .option('-k, --webSocketPort [webSocketPort]', 'Specify a port number for the web socket server. (default: 8889)')
@@ -40,6 +41,7 @@ program
   .option('-e, --extensions [extensions]', 'Specify extensions to track for refreshes; comma separated, no spaces. (default: html,css,js)')
   .option('-v, --verbose [verbose]', 'Print additional information about which files are watched/served.')
   .option('-u, --buildCommand [buildCommand]', 'Execute this command after a watched file changes; wait for it to complete before refreshing browsers.')
+  .option('-j, --jitter [jitter]', 'The number of milliseconds to wait before initiating a rebuild/refresh. (default: 300)', 300)
   .parse(process.argv);
 
 // Make sure the verbose and config file values are checked before loading settings.
@@ -56,13 +58,14 @@ for (var c in config) {
 }
 
 // Perform processing on user inputs.
-config.excludeStrings = config.excludeStrings ? config.excludeStrings.split(',') : [];
 config.proxy = config.proxy ? url.parse(config.proxy) : null,
 config.skipOpen = !!config.skipOpen;
 config.verbose = !!config.verbose;
 config.delay = parseInt(config.delay, 10) || 3;
+config.jitter = parseInt(config.jitter, 10) || 300;
 
 var watchedExtensions = {},
+    excludeStringsArray = [],
     webClients = {},
     mostRecentlyVisited,
     buildFailStdout = '',
@@ -71,14 +74,21 @@ var watchedExtensions = {},
     injectionScript = '<script>' + fs.readFileSync(__dirname + '/injection-script.js').toString().replace('%WSPORT%', config.webSocketPort) + '</script>',
     controlDiv = fs.readFileSync(__dirname + '/control-div.html').toString(),
     buildFailHtml = fs.readFileSync(__dirname + '/build-failure.html').toString(),
-    interfaces = os.networkInterfaces();
+    interfaces = os.networkInterfaces(),
+    throttledRefreshBrowser = throttleizer(config.delay, refreshBrowsers),
+    throttledNavigateBrowser = throttleizer(config.delay, navigateBrowsers),
+    throttledRebuildWatchers = throttleizer(config.delay, rebuildWatchers);
 
 config.extensions.split(',').forEach(
   function(ext) {
     this['.' + ext] = true;
   }.bind(watchedExtensions)
 );
-
+config.excludeStrings.split(',').forEach(
+  function(str) {
+    this.push(str);
+  }.bind(excludeStringsArray)
+);
 
 function overrideConfig(key) {
   config[key] = program[key] || config[key];
@@ -107,7 +117,7 @@ function readConfigFile(configPath) {
 function throttleizer(delay, callback) {
   var minimumRefresh = delay * 1000;
   var execTime = 0;
-  var trailingCall;
+  var timeoutCall;
 
   function wrappedCallback() {
     execTime = +new Date + minimumRefresh;
@@ -117,13 +127,13 @@ function throttleizer(delay, callback) {
   return function() {
     var now = +new Date;
 
+    if (timeoutCall) {
+      clearTimeout(timeoutCall);
+    }
     if (now > execTime) {
-      wrappedCallback();
+      timeoutCall = setTimeout(wrappedCallback, config.jitter);
     } else {
-      if (trailingCall) {
-        clearTimeout(trailingCall);
-      }
-      trailingCall = setTimeout(wrappedCallback, execTime - now);
+      timeoutCall = setTimeout(wrappedCallback, execTime - now);
     }
   };
 }
@@ -188,9 +198,6 @@ function sendBrowserCommand(cmd, targets) {
   webSocketsArray = openSockets;
 }
 
-var throttledRefreshBrowser = throttleizer(config.delay, refreshBrowsers),
-    throttledNavigateBrowser = throttleizer(config.delay, navigateBrowsers);
-
 function fileChangeFactory(filePath) {
   return function(evt) {
     if (evt == 'change') {
@@ -207,7 +214,7 @@ function fileChangeFactory(filePath) {
             buildFailStdout = '';
             verboseLog('Build completed successfully.');
           }
-          rebuildWatchers();
+          throttledRebuildWatchers();
           throttledRefreshBrowser();
         });
       } else {
@@ -216,7 +223,8 @@ function fileChangeFactory(filePath) {
     } else {
       console.log('File rename event: ' + filePath);
       // Not sure I actually need to rebuild the watchers here, but I will.
-      rebuildWatchers();
+      throttledRebuildWatchers();
+      throttledRefreshBrowser();
     }
   };
 }
@@ -225,7 +233,8 @@ function directoryChangeFactory(dirPath) {
   return function(evt, filename) {
     console.log('Directory change event at: ' + dirPath);
     // TODO: don't rescan the entire tree.
-    rebuildWatchers();
+    throttledRebuildWatchers();
+    throttledRefreshBrowser();
   };
 }
 
@@ -303,7 +312,7 @@ function scanDirectory(scanPath, depth) {
         } else {
           if (watchedExtensions[path.extname(file)]) {
             exclude = false;
-            config.excludeStrings.forEach(function(str) {
+            excludeStringsArray.forEach(function(str) {
               if (fullPath.match(str)) {
                 exclude = true;
                 verboseLog(fullPath + ' matched excludeString "' + str + '"; skipping.');
@@ -355,8 +364,6 @@ function receiveClientCommands(ws, cmd) {
       break;
   }
 }
-
-rebuildWatchers();
 
 var localServer = http.createServer(function(request, response) {
   var uri = url.parse(request.url).pathname,
@@ -446,6 +453,8 @@ var localServer = http.createServer(function(request, response) {
   });
 });
 
+rebuildWatchers();
+
 localServer.on('error', function(err) {
   dumpErrors(err, {port: config.port});
   this.close();
@@ -465,7 +474,6 @@ wss.on('connection', function(ws) {
     updateRemoteBrowsers();
   });
 });
-
 
 if (!config.skipOpen) {
   cp.exec('open http://localhost:' + config.port + '/');
