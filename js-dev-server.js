@@ -24,7 +24,9 @@ var http = require('http'),
       extensions: 'html,css,js',
       verbose: false,
       buildCommand: '',
-      jitter: 300
+      jitter: 500,
+      watchDirectory: '.',
+      serveDirectory: '.'
     };
 
 program
@@ -41,7 +43,9 @@ program
   .option('-e, --extensions [extensions]', 'Specify extensions to track for refreshes; comma separated, no spaces. (default: html,css,js)')
   .option('-v, --verbose [verbose]', 'Print additional information about which files are watched/served.')
   .option('-u, --buildCommand [buildCommand]', 'Execute this command after a watched file changes; wait for it to complete before refreshing browsers.')
-  .option('-j, --jitter [jitter]', 'The number of milliseconds to wait before initiating a rebuild/refresh. (default: 300)', 300)
+  .option('-j, --jitter [jitter]', 'The number of milliseconds to wait before initiating a rebuild/refresh. (default: 500)')
+  .option('-W, --watchDirectory [watchDirectory]', 'The directory to watch for changes. (default: current working directory)')
+  .option('-S, --serveDirectory [serveDirectory]', 'The directory to serve html files from. (default: current working directory)')
   .parse(process.argv);
 
 // Make sure the verbose and config file values are checked before loading settings.
@@ -62,7 +66,7 @@ config.proxy = config.proxy ? url.parse(config.proxy) : null,
 config.skipOpen = !!config.skipOpen;
 config.verbose = !!config.verbose;
 config.delay = parseInt(config.delay, 10) || 3;
-config.jitter = parseInt(config.jitter, 10) || 300;
+config.jitter = parseInt(config.jitter, 10) || 500;
 
 var watchedExtensions = {},
     excludeStringsArray = [],
@@ -75,9 +79,9 @@ var watchedExtensions = {},
     controlDiv = fs.readFileSync(__dirname + '/control-div.html').toString(),
     buildFailHtml = fs.readFileSync(__dirname + '/build-failure.html').toString(),
     interfaces = os.networkInterfaces(),
-    throttledRefreshBrowser = throttleizer(config.delay, refreshBrowsers),
-    throttledNavigateBrowser = throttleizer(config.delay, navigateBrowsers),
-    throttledRebuildWatchers = throttleizer(config.delay, rebuildWatchers);
+    throttledRefreshBrowser = throttleizer(config.delay, config.jitter, refreshBrowsers),
+    throttledNavigateBrowser = throttleizer(config.delay, config.jitter, navigateBrowsers),
+    throttledRebuildWatchers = throttleizer(config.delay, config.jitter, rebuildWatchers);
 
 config.extensions.split(',').forEach(
   function(ext) {
@@ -114,7 +118,7 @@ function readConfigFile(configPath) {
   }
 }
 
-function throttleizer(delay, callback) {
+function throttleizer(delay, jitter, callback) {
   var minimumRefresh = delay * 1000;
   var execTime = 0;
   var timeoutCall;
@@ -131,7 +135,7 @@ function throttleizer(delay, callback) {
       clearTimeout(timeoutCall);
     }
     if (now > execTime) {
-      timeoutCall = setTimeout(wrappedCallback, config.jitter);
+      timeoutCall = setTimeout(wrappedCallback, jitter);
     } else {
       timeoutCall = setTimeout(wrappedCallback, execTime - now);
     }
@@ -139,12 +143,14 @@ function throttleizer(delay, callback) {
 }
 
 function refreshBrowsers() {
+  console.log('Refreshing browsers.');
   sendBrowserCommand({
     action: 'reload'
   }, {boss: true, remoteBrowsers: true});
 }
 
 function navigateBrowsers() {
+  console.log('Navigating browsers to: ' + mostRecentlyVisited);
   sendBrowserCommand({
     action: 'navigate',
     url: mostRecentlyVisited
@@ -201,7 +207,7 @@ function sendBrowserCommand(cmd, targets) {
 function fileChangeFactory(filePath) {
   return function(evt) {
     if (evt == 'change') {
-      console.log('File change event: ' + filePath);
+      verboseLog('File change event: ' + filePath);
       if (config.buildCommand) {
         closeWatchers();
         cp.exec(config.buildCommand, function(error, stdout) {
@@ -221,7 +227,7 @@ function fileChangeFactory(filePath) {
         throttledRefreshBrowser();
       }
     } else {
-      console.log('File rename event: ' + filePath);
+      verboseLog('File rename event: ' + filePath);
       // Not sure I actually need to rebuild the watchers here, but I will.
       throttledRebuildWatchers();
       throttledRefreshBrowser();
@@ -231,7 +237,7 @@ function fileChangeFactory(filePath) {
 
 function directoryChangeFactory(dirPath) {
   return function(evt, filename) {
-    console.log('Directory change event at: ' + dirPath);
+    verboseLog('Directory change event at: ' + dirPath);
     // TODO: don't rescan the entire tree.
     throttledRebuildWatchers();
     throttledRefreshBrowser();
@@ -279,13 +285,15 @@ function closeWatchers() {
 }
 
 function rebuildWatchers() {
+  console.log('Rebuilding file watchers.');
+  
   closeWatchers();
 
-  scanDirectory('.');
+  scanDirectory(config.watchDirectory);
 }
 
 function scanDirectory(scanPath, depth) {
-  watcherArray.push(fs.watch(scanPath, {}, directoryChangeFactory(scanPath)));
+  //watcherArray.push(fs.watch(scanPath, {}, directoryChangeFactory(scanPath)));
   depth = depth || 0;
 
   var list = fs.readdirSync(scanPath);
@@ -367,8 +375,10 @@ function receiveClientCommands(ws, cmd) {
 
 var localServer = http.createServer(function(request, response) {
   var uri = url.parse(request.url).pathname,
-      filename = path.join(process.cwd(), uri),
+      startPath = path.join(process.cwd(), config.serveDirectory),
+      filename = path.join(startPath, uri),
       bossBrowser = request.socket.remoteAddress.match(config.bossAddress) ? true : false,
+      contentType,
       extension,
       $;
 
@@ -380,7 +390,6 @@ var localServer = http.createServer(function(request, response) {
     response.end();
     return;
   }
-
   fs.exists(filename, function(exists) {
     if (!exists) {
       if (config.proxy) {
@@ -436,16 +445,31 @@ var localServer = http.createServer(function(request, response) {
           throttledNavigateBrowser();
         }
 
-        if (extension == 'html') {
-          $ = cheerio.load(file);
-          $('body').append($(injectionScript));
-          if (bossBrowser) {
-            $('body').append($(controlDiv));
-          }
-          file = $.html();
+        switch(extension) {
+          case 'html':
+            contentType = {'Content-Type': 'text/html'};
+            $ = cheerio.load(file);
+            $('body').append($(injectionScript));
+            if (bossBrowser) {
+              $('body').append($(controlDiv));
+            }
+            file = $.html();
+            break;
+
+          case 'js':
+            contentType = {'Content-Type': 'application/javascript'};
+            break;
+
+          case 'css':
+            contentType = {'Content-Type': 'text/css'};
+            break;
+
+          case 'appcache':
+            contentType = {'Content-Type': 'text/cache-manifest'};
+            break;
         }
 
-        response.writeHead(200);
+        response.writeHead(200, contentType);
         response.write(file, 'binary');
         response.end();
       });

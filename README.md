@@ -93,7 +93,19 @@ If you have a build script for your project, you can specify a command to start 
 
     -j, --jitter
 
-If your text editor is like mine, it might touch a couple of files when you invoke a save command. If this is the case, you'll want js-dev-server to wait until all that activity is finished before it rescans and refreshes your pages. The jitter option allows you to specify how long to wait before a rescan/refresh will start. The default wait time is 300ms.
+If your text editor is like mine, it might touch a couple of files when you invoke a save command. If this is the case, you'll want js-dev-server to wait until all that activity is finished before it rescans and refreshes your pages. The jitter option allows you to specify how long to wait before a rescan/refresh will start. The default wait time is 500ms.
+
+#### watchDirectory
+
+    -W, --watchDirectory
+
+The directory to watch for changes. (default: current working directory)
+
+#### serveDirectory
+
+    -S, --serveDirectory
+
+The directory to serve html files from. (default: current working directory)
 
 ## Thanks:
 [Paul Irish](https://twitter.com/paul_irish)

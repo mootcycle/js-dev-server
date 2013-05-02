@@ -1,5 +1,8 @@
 (function() {
-  if (JSON && WebSocket && console && Array.prototype.map) {
+  if (typeof JSON != 'undefined' &&
+      typeof WebSocket != 'undefined' &&
+      typeof console != 'undefined' &&
+      typeof Array.prototype.map != 'undefined') {
     var wsLocation = "ws://" + window.location.hostname + ":%WSPORT%/js-dev-server-refresh";
 
     document.addEventListener('keypress', function(evt) {
